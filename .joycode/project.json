@@ -1,0 +1,19 @@
+{
+  "id": 48792,
+  "name": "AAA",
+  "abbrName": "AA",
+  "description": "",
+  "devMode": 2,
+  "status": null,
+  "url": null,
+  "databaseHost": null,
+  "databasePort": null,
+  "databaseName": null,
+  "databaseUsername": null,
+  "databasePassword": null,
+  "projectInfo": [
+    {
+      "jd_585429106bf38": 48792
+    }
+  ]
+}
