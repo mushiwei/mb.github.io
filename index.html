@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vue3 + Arco Design CRUD 示例</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Arco Design 样式 -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/@arco-design/web-vue@2.53.0/dist/arco.css"
+    />
+    <style>
+      body {
+        background: #f5f7fa;
+        margin: 0;
+        padding: 24px;
+      }
+      #app {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <a-space direction="vertical" size="large" style="width: 100%">
+        <a-card title="日志页面 - 示例" bordered>
+          <template #extra>
+            <a-space>
+              <a-input
+                v-model="searchKeyword"
+                placeholder="按名称搜索..."
+                allow-clear
+                style="width: 220px"
+              />
+              <a-button type="primary" @click="openCreate">新增记录</a-button>
+              <a-button @click="reset">重置</a-button>
+            </a-space>
+          </template>
+
+          <!-- 列表：改 row-key 为 date，并新增日期插槽；状态颜色改为成功=绿，失败=红 -->
+          <a-table
+            :columns="columns"
+            :data="filteredData"
+            :pagination="pagination"
+            row-key="date"
+            size="medium"
+            :bordered="{ cell: true }"
+          >
+            <!-- 新增：日期显示插槽 -->
+            <template #date="{ record }">
+              {{ record.date }}
+            </template>
+            <!-- 修改：状态颜色与文案 -->
+            <template #status="{ record }">
+              <a-tag :color="record.status === '成功' ? 'green' : 'red'">
+                {{ record.status }}
+              </a-tag>
+            </template>
+          
+            <template #operation="{ record }">
+              <a-space>
+                <a-button size="small" type="outline" @click="openEdit(record)">
+                  编辑
+                </a-button>
+                <a-popconfirm content="确认删除该记录？" @ok="remove(record.date)">
+                  <a-button status="danger" size="small">删除</a-button>
+                </a-popconfirm>
+              </a-space>
+            </template>
+          </a-table>
+        </a-card>
+
+        <a-modal
+          v-model:visible="modalVisible"
+          :title="isEditing ? '编辑记录' : '新增记录'"
+          :ok-text="isEditing ? '保存' : '创建'"
+          cancel-text="取消"
+          @ok="submitForm"
+          @cancel="closeModal"
+          unmount-on-close
+        >
+          <!-- 弹窗表单：新增日期选择器；状态改为成功/失败 -->
+          <a-form
+            ref="formRef"
+            :model="form"
+            :rules="rules"
+            layout="vertical"
+            scroll-to-first-error
+          >
+            <!-- 新增：日期 -->
+            <a-form-item field="date" label="日期" required>
+              <a-date-picker
+                v-model="form.date"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+                placeholder="请选择日期"
+              />
+            </a-form-item>
+          
+            <!-- 原有字段保持 -->
+            <a-form-item field="name" label="名称" required>
+              <a-input v-model="form.name" placeholder="请输入名称" />
+            </a-form-item>
+          
+            <!-- 修改：状态选项 -->
+            <a-form-item field="status" label="状态" required>
+              <a-select v-model="form.status" placeholder="请选择状态">
+                <a-option value="成功">成功</a-option>
+                <a-option value="失败">失败</a-option>
+              </a-select>
+            </a-form-item>
+
+            <a-form-item field="description" label="描述">
+              <a-textarea
+                v-model="form.description"
+                placeholder="请输入描述（可选）"
+                allow-clear
+                :auto-size="{ minRows: 2, maxRows: 6 }"
+              />
+            </a-form-item>
+          </a-form>
+        </a-modal>
+      </a-space>
+    </div>
+
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js"></script>
+    <!-- Arco Design Vue（CDN 全量注册） -->
+    <script src="https://unpkg.com/@arco-design/web-vue@2.53.0/dist/arco-vue.min.js"></script>
+
+    <script>
+      const { createApp, ref, reactive, computed, nextTick } = Vue;
+
+      const app = createApp({
+        setup() {
+          // 修改：列定义（ID -> 日期），并使用日期插槽
+          const columns = [
+            { title: '日期', dataIndex: 'date', slotName: 'date', width: 140 },
+            { title: '名称', dataIndex: 'name' },
+            { title: '状态', dataIndex: 'status', slotName: 'status', width: 120 },
+            { title: '描述', dataIndex: 'description', ellipsis: true },
+            { title: '操作', dataIndex: 'operation', slotName: 'operation', width: 160 }
+          ];
+          
+          // 修改：初始数据（使用日期与成功/失败）
+          const tableData = ref([
+            { date: '2025-11-10', name: '示例一', status: '成功', description: '这是一个成功的示例' },
+            { date: '2025-11-10', name: '示例二', status: '失败', description: '这是一个失败的示例' },
+            { date: '2025-11-10', name: '示例三', status: '成功', description: '更多描述...' }
+          ]);
+
+          // 分页配置（Arco Table 内置分页）
+          const pagination = reactive({
+            pageSize: 5,
+            current: 1,
+            showTotal: true
+          });
+
+          // 搜索
+          const searchKeyword = ref('');
+          const filteredData = computed(() => {
+            const kw = searchKeyword.value.trim().toLowerCase();
+            const list = kw
+              ? tableData.value.filter((item) =>
+                  String(item.name).toLowerCase().includes(kw)
+                )
+              : tableData.value;
+            // 简单的分页处理（让分页和过滤协同）
+            const start = (pagination.current - 1) * pagination.pageSize;
+            const end = start + pagination.pageSize;
+            pagination.total = list.length;
+            return list.slice(start, end);
+          });
+
+          // 表单与弹窗
+          // 修改：编辑索引（不再使用 id）
+          const modalVisible = ref(false);
+          const isEditing = ref(false);
+          const editingIndex = ref(-1);
+          const formRef = ref();
+          const form = reactive({
+            date: '',
+            name: '',
+            status: '成功',
+            description: ''
+          });
+          
+          const rules = {
+            date: [{ required: true, message: '请选择日期' }],
+            name: [{ required: true, message: '请输入名称' }],
+            status: [{ required: true, message: '请选择状态' }]
+          };
+
+          // 全局消息
+          const Message = ArcoVue.Message;
+
+          // 删除：不再需要 getNextId
+          // 打开新增
+          const openCreate = async () => {
+            isEditing.value = false;
+            editingIndex.value = -1;
+            form.date = '';
+            form.name = '';
+            form.status = '成功';
+            form.description = '';
+            modalVisible.value = true;
+            await nextTick();
+            formRef.value?.clearValidate();
+          };
+
+          // 修改：打开编辑（通过日期定位记录）
+          const openEdit = async (record) => {
+            isEditing.value = true;
+            editingIndex.value = tableData.value.findIndex((i) => i.date === record.date);
+            form.date = record.date;
+            form.name = record.name;
+            form.status = record.status;
+            form.description = record.description || '';
+            modalVisible.value = true;
+            await nextTick();
+            formRef.value?.clearValidate();
+          };
+
+          // 关闭弹窗
+          const closeModal = () => {
+            modalVisible.value = false;
+          };
+
+          // 提交（新增或编辑）
+          const submitForm = async () => {
+            try {
+              await formRef.value?.validate();
+            } catch (e) {
+              return;
+            }
+
+            if (isEditing.value) {
+              const idx = editingIndex.value;
+              if (idx > -1) {
+                tableData.value[idx] = {
+                  ...tableData.value[idx],
+                  date: form.date,
+                  name: form.name,
+                  status: form.status,
+                  description: form.description
+                };
+                Message.success('保存成功');
+              } else {
+                Message.error('记录不存在或已删除');
+              }
+            } else {
+              const newItem = {
+                date: form.date,
+                name: form.name,
+                status: form.status,
+                description: form.description
+              };
+              tableData.value.unshift(newItem);
+              Message.success('创建成功');
+            }
+
+            modalVisible.value = false;
+          };
+
+          // 修改：删除（通过日期）
+          const remove = (date) => {
+            const before = tableData.value.length;
+            tableData.value = tableData.value.filter((i) => i.date !== date);
+            const after = tableData.value.length;
+            if (after < before) {
+              Message.success('删除成功');
+            } else {
+              Message.error('删除失败或记录不存在');
+            }
+          };
+
+          // 重置搜索与分页
+          const reset = () => {
+            searchKeyword.value = '';
+            pagination.current = 1;
+            Message.info('已重置筛选与分页');
+          };
+
+          return {
+            columns,
+            tableData,
+            pagination,
+            searchKeyword,
+            filteredData,
+            modalVisible,
+            isEditing,
+            formRef,
+            form,
+            rules,
+            openCreate,
+            openEdit,
+            closeModal,
+            submitForm,
+            remove,
+            reset
+          };
+        }
+      });
+
+      // 注册 Arco 组件库
+      app.use(ArcoVue);
+      app.mount('#app');
+    </script>
+  </body>
+</html>
